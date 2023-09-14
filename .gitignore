@@ -1,3 +1,4 @@
 /target
 /nonsense
 /.vscode
+.DS_Store
