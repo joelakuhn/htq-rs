@@ -14,16 +14,35 @@ struct Opts<'a> {
     nl: &'a str,
 }
 
-#[allow(unused_must_use)]
-fn proces_fragment(document: &scraper::ElementRef, set: &Vec<Vec<Selector>>, set_i: usize, opts: &Opts, out: &mut dyn Write, path: &String) {
-    let mut match_count = 0;
-    for sel in set.get(set_i).unwrap() {
-        let matches : Vec<scraper::ElementRef> = document.select(&sel).collect();
+enum SelectorDirection {
+    Parent,
+    Child,
+}
 
-        if set_i < set.len() - 1 {
+struct SelectorSet {
+    direction: SelectorDirection,
+    selectors: Vec<Selector>,
+}
+
+#[allow(unused_must_use)]
+fn proces_fragment(document: &scraper::ElementRef, sets: &Vec<SelectorSet>, set_i: usize, opts: &Opts, out: &mut dyn Write, path: &String) {
+    let mut match_count = 0;
+    let direction = &sets.get(set_i).unwrap().direction;
+    for selector in &sets.get(set_i).unwrap().selectors {
+        let matches : Vec<scraper::ElementRef> = document.select(selector).collect();
+
+        if set_i < sets.len() - 1 {
             for el in matches {
                 let next_set_i = set_i + 1;
-                proces_fragment(&el, set, next_set_i, opts, out, path)
+                match direction {
+                    SelectorDirection::Child => {
+                        proces_fragment(&el, sets, next_set_i, opts, out, path);
+                    }
+                    SelectorDirection::Parent => {
+                        proces_fragment(document, sets, next_set_i, opts, out, path);
+                        break;
+                    }
+                }
             }
             continue;
         }
@@ -40,7 +59,10 @@ fn proces_fragment(document: &scraper::ElementRef, set: &Vec<Vec<Selector>>, set
             match_count += matches.len();
             continue;
         }
-        for el in matches {
+        for mut el in &matches {
+            if matches!(direction, SelectorDirection::Parent) {
+                el = document;
+            }
             if opts.attributes.len() > 0 {
                 for attr in &opts.attributes {
                     if opts.prefix { write!(out, "{}:", *path); }
@@ -58,6 +80,9 @@ fn proces_fragment(document: &scraper::ElementRef, set: &Vec<Vec<Selector>>, set
                 if opts.prefix { write!(out, "{}:", *path); }
                 write!(out, "{}{}", el.html(), opts.nl);
             }
+            if matches!(direction, SelectorDirection::Parent) {
+                break;
+            }
         }
     }
     if opts.count {
@@ -65,7 +90,7 @@ fn proces_fragment(document: &scraper::ElementRef, set: &Vec<Vec<Selector>>, set
     }
 }
 
-fn process_path(path: &String, set: &Vec<Vec<Selector>>, set_i: usize, opts: &Opts, write: &mut dyn Write) {
+fn process_path(path: &String, set: &Vec<SelectorSet>, set_i: usize, opts: &Opts, write: &mut dyn Write) {
     let file_result = if path == "-" {
         std::io::read_to_string(std::io::stdin())
     }
@@ -91,6 +116,12 @@ fn parse_args(args: &Vec<String>) -> ArgMatches {
         .long("css")
         .help("CSS selector")
         .action(ArgAction::Append))
+
+    .arg(Arg::new("parent")
+        .short('p')
+        .long("parent")
+        .help("Select the current element rather than the matched child")
+        .action(ArgAction::SetTrue))
 
     .arg(Arg::new("attribute")
         .short('a')
@@ -199,7 +230,7 @@ fn main() {
         nl: nl,
     };
 
-    let mut selector_sets: Vec<Vec<Selector>> = vec![];
+    let mut selector_sets: Vec<SelectorSet> = vec![];
     let commands = args.split(|arg| arg == "|" || arg == "!");
     let mut i = 0;
     for command in commands {
@@ -211,11 +242,20 @@ fn main() {
 
         let matches = parse_args(&vec_command.into());
 
+        let direction = if *matches.get_one::<bool>("parent").unwrap_or(&false) {
+            SelectorDirection::Parent
+        }
+        else {
+            SelectorDirection::Child
+        };
         let selectors : Vec<Selector> = matches.get_many::<String>("selector").unwrap_or_default().map(|s| {
             Selector::parse(s).expect("Could not parse selector {}")
         }).collect();
 
-        selector_sets.push(selectors);
+        selector_sets.push(SelectorSet {
+            direction: direction,
+            selectors: selectors,
+        });
     }
 
     if selector_sets.len() > 0 {
