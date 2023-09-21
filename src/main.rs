@@ -1,7 +1,7 @@
 use std::{env, process::exit, fs::OpenOptions, vec};
 
 use clap::{Arg, ArgAction, ArgMatches};
-use scraper::{Html, Selector};
+use scraper::{Html, Selector, ElementRef};
 use std::io::Write;
 
 struct Opts<'a> {
@@ -24,70 +24,97 @@ struct SelectorSet {
     selectors: Vec<Selector>,
 }
 
-#[allow(unused_must_use)]
+struct MatchRecorder<'a> {
+    count: usize,
+    opts: &'a Opts<'a>,
+    path: &'a String,
+}
+
+impl MatchRecorder<'_> {
+    fn new<'a>(opts: &'a Opts<'a>, path: &'a String) -> MatchRecorder<'a> {
+        return MatchRecorder {
+            count: 0,
+            opts: opts,
+            path: path,
+        }
+    }
+
+    #[allow(unused_must_use)]
+    fn record<'a>(&mut self, el: &ElementRef, out: &'a mut dyn Write) {
+        if self.opts.count {
+            self.count += 1;
+            return;
+        }
+
+        if self.opts.quiet {
+            exit(0);
+        }
+
+        if self.opts.list {
+            if self.opts.prefix { write!(out, "{}:", *self.path); }
+            write!(out, "{}{}", *self.path, self.opts.nl);
+        }
+
+        if self.opts.attributes.len() > 0 {
+            for attr in &self.opts.attributes {
+                if self.opts.prefix { write!(out, "{}:", *self.path); }
+                write!(out, "{}{}", el.value().attr(attr).unwrap_or(""), self.opts.nl);
+            }
+        }
+
+        else if self.opts.text {
+            if self.opts.prefix { write!(out, "{}:", *self.path); }
+            for piece in el.text() {
+                write!(out, "{}", piece);
+            }
+            write!(out, "{}", self.opts.nl);
+        }
+
+        else {
+            if self.opts.prefix { write!(out, "{}:", *self.path); }
+            write!(out, "{}{}", el.html(), self.opts.nl);
+        }
+    }
+
+    #[allow(unused_must_use)]
+    fn conclude<'a>(self, out: &'a mut dyn Write) {
+        if self.opts.count {
+            write!(out, "{}{}", self.count, self.opts.nl);
+        }
+    }
+}
+
 fn proces_fragment(document: &scraper::ElementRef, sets: &Vec<SelectorSet>, set_i: usize, opts: &Opts, out: &mut dyn Write, path: &String) {
-    let mut match_count = 0;
     let direction = &sets.get(set_i).unwrap().direction;
+    let mut recorder = MatchRecorder::new(opts, path);
+
     for selector in &sets.get(set_i).unwrap().selectors {
         let matches : Vec<scraper::ElementRef> = document.select(selector).collect();
 
-        if set_i < sets.len() - 1 {
+        if set_i + 1 < sets.len() {
             for el in matches {
                 let next_set_i = set_i + 1;
-                match direction {
-                    SelectorDirection::Child => {
-                        proces_fragment(&el, sets, next_set_i, opts, out, path);
-                    }
-                    SelectorDirection::Parent => {
-                        proces_fragment(document, sets, next_set_i, opts, out, path);
-                        break;
-                    }
+                if matches!(direction, SelectorDirection::Child) {
+                    proces_fragment(&el, sets, next_set_i, opts, out, path);
+                }
+                else {
+                    proces_fragment(document, sets, next_set_i, opts, out, path);
+                    break;
                 }
             }
-            continue;
         }
-
-        if opts.quiet && matches.len() > 0 {
-            exit(0);
-        }
-        if opts.list && matches.len() > 0 {
-            if opts.prefix { write!(out, "{}:", *path); }
-            write!(out, "{}{}", *path, opts.nl);
-            break;
-        }
-        if opts.count {
-            match_count += matches.len();
-            continue;
-        }
-        for mut el in &matches {
-            if matches!(direction, SelectorDirection::Parent) {
-                el = document;
-            }
-            if opts.attributes.len() > 0 {
-                for attr in &opts.attributes {
-                    if opts.prefix { write!(out, "{}:", *path); }
-                    write!(out, "{}{}", el.value().attr(attr).unwrap_or(""), opts.nl);
+        else {
+            for el in matches {
+                if matches!(direction, SelectorDirection::Child) {
+                    recorder.record(&el, out);
                 }
-            }
-            else if opts.text {
-                if opts.prefix { write!(out, "{}:", *path); }
-                for piece in el.text() {
-                    write!(out, "{}", piece);
+                else {
+                    recorder.record(document, out);
                 }
-                write!(out, "{}", opts.nl);
-            }
-            else {
-                if opts.prefix { write!(out, "{}:", *path); }
-                write!(out, "{}{}", el.html(), opts.nl);
-            }
-            if matches!(direction, SelectorDirection::Parent) {
-                break;
             }
         }
     }
-    if opts.count {
-        write!(out, "{}{}", match_count, opts.nl);
-    }
+    recorder.conclude(out);
 }
 
 fn process_path(path: &String, set: &Vec<SelectorSet>, set_i: usize, opts: &Opts, write: &mut dyn Write) {
