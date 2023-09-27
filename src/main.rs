@@ -13,10 +13,9 @@ struct Opts<'a> {
     count: bool,
     nl: &'a str,
 }
-
 enum SelectorDirection {
-    Parent,
-    Child,
+    Document,
+    Self,
 }
 
 struct SelectorSet {
@@ -84,28 +83,26 @@ impl MatchRecorder<'_> {
     }
 }
 
-fn proces_fragment(document: &scraper::ElementRef, sets: &Vec<SelectorSet>, set_i: usize, opts: &Opts, out: &mut dyn Write, path: &String) {
+fn proces_fragment(document: &ElementRef, sets: &Vec<SelectorSet>, set_i: usize, opts: &Opts, out: &mut dyn Write, path: &String) {
     let direction = &sets.get(set_i).unwrap().direction;
     let mut recorder = MatchRecorder::new(opts, path);
 
     for selector in &sets.get(set_i).unwrap().selectors {
-        let matches : Vec<scraper::ElementRef> = document.select(selector).collect();
-
-        if set_i + 1 < sets.len() {
+        let matches : Vec<ElementRef> = document.select(selector).collect();
+if set_i + 1 < sets.len() {
             for el in matches {
                 let next_set_i = set_i + 1;
-                if matches!(direction, SelectorDirection::Child) {
+                if matches!(direction, SelectorDirection::Self) {
                     proces_fragment(&el, sets, next_set_i, opts, out, path);
                 }
                 else {
                     proces_fragment(document, sets, next_set_i, opts, out, path);
                     break;
                 }
-            }
-        }
+            } }
         else {
             for el in matches {
-                if matches!(direction, SelectorDirection::Child) {
+                if matches!(direction, SelectorDirection::Self) {
                     recorder.record(&el, out);
                 }
                 else {
@@ -209,15 +206,30 @@ fn main() {
     #[cfg(not(windows))]
     const LINE_ENDING: &'static str = "\n";
 
+    let stdin_path = String::from("-");
+
     let args: Vec<String> = std::env::args().collect();
     let matches = parse_args(&args);
-
     let nl = if *matches.get_one::<bool>("print0").unwrap_or(&false) { "\0" } else { LINE_ENDING };
     let prefix = *matches.get_one::<bool>("prefix").unwrap_or(&false);
     let mut positional_args : Vec<&String> = matches.get_many::<String>("files").unwrap_or_default().collect();
+    let out_opt = matches.get_one::<String>("output");
+    let list = *matches.get_one::<bool>("list").unwrap_or(&false);
+    let quiet = *matches.get_one::<bool>("quiet").unwrap_or(&false);
+    let text = *matches.get_one::<bool>("text").unwrap_or(&false);
+    let count = *matches.get_one::<bool>("count").unwrap_or(&false);
+    let attributes : Vec<&String> = matches.get_many::<String>("attribute").unwrap_or_default().collect();
+
+    if positional_args.len() == 0 {
+        positional_args.push(&stdin_path);
+    }
+    else {
+        println!("{:?}", positional_args);
+    }
+
     let mut fileout;
     let mut stdout;
-    let out : &mut dyn std::io::Write = match matches.get_one::<String>("output") {
+    let out: &mut dyn std::io::Write = match out_opt {
         Some(path) => {
             fileout = OpenOptions::new().write(true).open(path).expect("Could not open output file.");
             &mut fileout
@@ -227,15 +239,6 @@ fn main() {
             &mut stdout
         }
     };
-    let stdin_path = String::from("-");
-    if positional_args.len() == 0 {
-        positional_args.push(&stdin_path);
-    }
-    let list = *matches.get_one::<bool>("list").unwrap_or(&false);
-    let quiet = *matches.get_one::<bool>("quiet").unwrap_or(&false);
-    let text = *matches.get_one::<bool>("text").unwrap_or(&false);
-    let count = *matches.get_one::<bool>("count").unwrap_or(&false);
-    let attributes : Vec<&String> = matches.get_many::<String>("attribute").unwrap_or_default().collect();
 
     // if selector_args.len() == 0 && positional_args.len() > 0 {
     //     selector_args.push(positional_args.first().unwrap());
@@ -259,21 +262,19 @@ fn main() {
 
     let mut selector_sets: Vec<SelectorSet> = vec![];
     let commands = args.split(|arg| arg == "|" || arg == "!");
-    let mut i = 0;
-    for command in commands {
+    for (i, command) in commands.enumerate() {
         let mut vec_command: Vec<String> = Vec::from_iter(command.iter().map(|s| String::from(s)));
         if i > 0 {
             vec_command.insert(0, String::from(args.first().unwrap()));
         }
-        i += 1;
 
         let matches = parse_args(&vec_command.into());
 
         let direction = if *matches.get_one::<bool>("parent").unwrap_or(&false) {
-            SelectorDirection::Parent
+            SelectorDirection::Document
         }
         else {
-            SelectorDirection::Child
+            SelectorDirection::Self
         };
         let selectors : Vec<Selector> = matches.get_many::<String>("selector").unwrap_or_default().map(|s| {
             Selector::parse(s).expect("Could not parse selector {}")
