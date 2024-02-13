@@ -15,7 +15,7 @@ struct Opts<'a> {
 }
 enum SelectorDirection {
     Document,
-    Self,
+    Current,
 }
 
 struct SelectorSet {
@@ -92,7 +92,7 @@ fn proces_fragment(document: &ElementRef, sets: &Vec<SelectorSet>, set_i: usize,
 if set_i + 1 < sets.len() {
             for el in matches {
                 let next_set_i = set_i + 1;
-                if matches!(direction, SelectorDirection::Self) {
+                if matches!(direction, SelectorDirection::Current) {
                     proces_fragment(&el, sets, next_set_i, opts, out, path);
                 }
                 else {
@@ -102,7 +102,7 @@ if set_i + 1 < sets.len() {
             } }
         else {
             for el in matches {
-                if matches!(direction, SelectorDirection::Self) {
+                if matches!(direction, SelectorDirection::Current) {
                     recorder.record(&el, out);
                 }
                 else {
@@ -274,7 +274,7 @@ fn main() {
             SelectorDirection::Document
         }
         else {
-            SelectorDirection::Self
+            SelectorDirection::Current
         };
         let selectors : Vec<Selector> = matches.get_many::<String>("selector").unwrap_or_default().map(|s| {
             Selector::parse(s).expect("Could not parse selector {}")
