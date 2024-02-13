@@ -220,7 +220,9 @@ fn main() {
     let matches = parse_args(&args);
     let nl = if *matches.get_one::<bool>("print0").unwrap_or(&false) { "\0" } else { LINE_ENDING };
     let prefix = *matches.get_one::<bool>("prefix").unwrap_or(&false);
-    let mut positional_args : Vec<&String> = matches.get_many::<String>("files").unwrap_or_default().collect();
+    let mut positional_args : Vec<&String> = matches.get_many::<String>("files")
+        .unwrap_or_default()
+        .filter(|s| *s != "!" && *s != "|").collect();
     let out_opt = matches.get_one::<String>("output");
     let list = *matches.get_one::<bool>("list").unwrap_or(&false);
     let quiet = *matches.get_one::<bool>("quiet").unwrap_or(&false);
