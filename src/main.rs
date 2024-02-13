@@ -247,16 +247,6 @@ fn main() {
         }
     };
 
-    // if selector_args.len() == 0 && positional_args.len() > 0 {
-    //     selector_args.push(positional_args.first().unwrap());
-    //     positional_args.drain(0..1);
-    // }
-
-    // if selector_args.len() == 0 {
-    //     eprintln!("You must specify at least one selector.");
-    //     exit(1);
-    // }
-
     let mut opts = Opts{
         attributes: attributes,
         list: list,
