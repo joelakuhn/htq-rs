@@ -267,12 +267,10 @@ fn main() {
 
         let matches = parse_args(&vec_command.into());
 
-        let direction = if *matches.get_one::<bool>("parent").unwrap_or(&false) {
-            SelectorDirection::Document
-        }
-        else {
-            SelectorDirection::Current
-        };
+        let direction = if *matches.get_one::<bool>("parent").unwrap_or(&false)
+            { SelectorDirection::Document }
+            else { SelectorDirection::Current };
+
         let selectors : Vec<Selector> = matches.get_many::<String>("selector").unwrap_or_default().map(|s| {
             Selector::parse(s).expect("Could not parse selector {}")
         }).collect();
