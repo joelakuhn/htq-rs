@@ -86,10 +86,18 @@ impl MatchRecorder<'_> {
 fn proces_fragment(document: &ElementRef, sets: &Vec<SelectorSet>, set_i: usize, opts: &Opts, out: &mut dyn Write, path: &String) {
     let direction = &sets.get(set_i).unwrap().direction;
     let mut recorder = MatchRecorder::new(opts, path);
+    let selectors = &sets.get(set_i).unwrap().selectors;
 
-    for selector in &sets.get(set_i).unwrap().selectors {
+    if selectors.is_empty() {
+        match direction {
+            SelectorDirection::Current => recorder.record(document, out),
+            SelectorDirection::Document => recorder.record(document, out),
+        }
+    }
+
+    for selector in selectors {
         let matches : Vec<ElementRef> = document.select(selector).collect();
-if set_i + 1 < sets.len() {
+        if set_i + 1 < sets.len() {
             for el in matches {
                 let next_set_i = set_i + 1;
                 if matches!(direction, SelectorDirection::Current) {
