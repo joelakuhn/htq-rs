@@ -233,9 +233,6 @@ fn main() {
     if positional_args.len() == 0 {
         positional_args.push(&stdin_path);
     }
-    else {
-        println!("{:?}", positional_args);
-    }
 
     let mut fileout;
     let mut stdout;
