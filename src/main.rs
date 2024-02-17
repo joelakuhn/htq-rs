@@ -12,7 +12,9 @@ struct Opts<'a> {
     prefix: bool,
     count: bool,
     nl: &'a str,
+    search: Option<&'a String>,
 }
+
 enum SelectorDirection {
     Document,
     Current,
@@ -109,7 +111,10 @@ fn proces_fragment(document: &ElementRef, sets: &Vec<SelectorSet>, set_i: usize,
     }
 
     for selector in selectors {
-        let matches : Vec<ElementRef> = document.select(selector).collect();
+        let matches = document.select(selector);
+        let matches = matches.filter(|el| {
+            opts.search.is_none() || String::from_iter(el.text()).contains(opts.search.unwrap())
+        });
         if set_i + 1 < sets.len() {
             for el in matches {
                 let next_set_i = set_i + 1;
@@ -120,7 +125,8 @@ fn proces_fragment(document: &ElementRef, sets: &Vec<SelectorSet>, set_i: usize,
                     proces_fragment(document, sets, next_set_i, opts, out, path);
                     break;
                 }
-            } }
+            }
+        }
         else {
             for el in matches {
                 if matches!(direction, SelectorDirection::Current) {
@@ -221,6 +227,11 @@ fn parse_args(args: &Vec<String>) -> ArgMatches {
         .long("output")
         .help("Output file"))
 
+    .arg(Arg::new("search")
+        .short('s')
+        .long("search")
+        .help("Search String (matches against all elements)"))
+
     .arg(Arg::new("files")
         .action(ArgAction::Append))
 
@@ -238,7 +249,6 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let matches = parse_args(&args);
     let nl = if *matches.get_one::<bool>("print0").unwrap_or(&false) { "\0" } else { LINE_ENDING };
-    let prefix = *matches.get_one::<bool>("prefix").unwrap_or(&false);
     let mut positional_args : Vec<&String> = matches.get_many::<String>("files")
         .unwrap_or_default()
         .filter(|s| *s != "!" && *s != "|").collect();
@@ -250,6 +260,7 @@ fn main() {
     let text = *matches.get_one::<bool>("text").unwrap_or(&false);
     let count = *matches.get_one::<bool>("count").unwrap_or(&false);
     let attributes : Vec<&String> = matches.get_many::<String>("attribute").unwrap_or_default().collect();
+    let search = matches.get_one::<String>("search");
 
     if positional_args.len() == 0 {
         positional_args.push(&stdin_path);
@@ -276,6 +287,7 @@ fn main() {
         prefix: prefix,
         count: count,
         nl: nl,
+        search: search,
     };
 
     let mut selector_sets: Vec<SelectorSet> = vec![];
