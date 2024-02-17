@@ -1,4 +1,4 @@
-use std::{env, process::exit, fs::OpenOptions, vec};
+use std::{env, fs::OpenOptions, io::IsTerminal, process::exit, vec};
 
 use clap::{Arg, ArgAction, ArgMatches};
 use scraper::{Html, Selector, ElementRef};
@@ -21,6 +21,19 @@ enum SelectorDirection {
 struct SelectorSet {
     direction: SelectorDirection,
     selectors: Vec<Selector>,
+}
+
+#[allow(unused_must_use)]
+fn highlight_prefix(out: &mut dyn Write, str: &str) {
+    const COLORS_MAGENTA: &str = "\x1b[35m";
+    const COLORS_RESET: &str = "\x1b[0m";
+
+    if std::io::stdout().is_terminal() {
+        write!(out, "{}{}:{}", COLORS_MAGENTA, str, COLORS_RESET);
+    }
+    else {
+        write!(out, "{}:", str);
+    }
 }
 
 struct MatchRecorder<'a> {
@@ -50,19 +63,19 @@ impl MatchRecorder<'_> {
         }
 
         if self.opts.list {
-            if self.opts.prefix { write!(out, "{}:", *self.path); }
+            if self.opts.prefix { highlight_prefix(out, self.path); }
             write!(out, "{}{}", *self.path, self.opts.nl);
         }
 
         if self.opts.attributes.len() > 0 {
             for attr in &self.opts.attributes {
-                if self.opts.prefix { write!(out, "{}:", *self.path); }
+                if self.opts.prefix { highlight_prefix(out, self.path); }
                 write!(out, "{}{}", el.value().attr(attr).unwrap_or(""), self.opts.nl);
             }
         }
 
         else if self.opts.text {
-            if self.opts.prefix { write!(out, "{}:", *self.path); }
+            if self.opts.prefix { highlight_prefix(out, self.path); }
             for piece in el.text() {
                 write!(out, "{}", piece);
             }
@@ -70,7 +83,7 @@ impl MatchRecorder<'_> {
         }
 
         else {
-            if self.opts.prefix { write!(out, "{}:", *self.path); }
+            if self.opts.prefix { highlight_prefix(out, self.path); }
             write!(out, "{}{}", el.html(), self.opts.nl);
         }
     }
@@ -173,6 +186,12 @@ fn parse_args(args: &Vec<String>) -> ArgMatches {
         .help("Print file name prefix")
         .action(ArgAction::SetTrue))
 
+    .arg(Arg::new("no-prefix")
+        .short('H')
+        .long("no-prefix")
+        .help("Suppress file name prefix")
+        .action(ArgAction::SetTrue))
+
     .arg(Arg::new("list")
         .short('l')
         .long("list")
@@ -223,6 +242,8 @@ fn main() {
     let mut positional_args : Vec<&String> = matches.get_many::<String>("files")
         .unwrap_or_default()
         .filter(|s| *s != "!" && *s != "|").collect();
+    let noprefix = *matches.get_one::<bool>("no-prefix").unwrap_or(&false);
+    let prefix = (*matches.get_one::<bool>("prefix").unwrap_or(&false) || positional_args.len() > 1) && !noprefix;
     let out_opt = matches.get_one::<String>("output");
     let list = *matches.get_one::<bool>("list").unwrap_or(&false);
     let quiet = *matches.get_one::<bool>("quiet").unwrap_or(&false);
