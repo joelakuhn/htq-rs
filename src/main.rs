@@ -166,74 +166,94 @@ fn parse_args(args: &Vec<String>) -> ArgMatches {
         .short('c')
         .long("css")
         .help("CSS selector")
+        .help_heading("Selectors")
         .action(ArgAction::Append))
+
+    .arg(Arg::new("search")
+        .short('s')
+        .long("search")
+        .help("Search String (matches against all elements)")
+        .help_heading("Selectors")
+        .group("stream-relative"))
 
     .arg(Arg::new("parent")
         .short('p')
         .long("parent")
         .help("Select the current element rather than the matched child")
+        .help_heading("Selectors")
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("attribute")
         .short('a')
         .long("attr")
         .help("Extract an attribute value")
+        .help_heading("Output")
         .action(ArgAction::Append))
 
     .arg(Arg::new("text")
         .short('t')
         .long("text")
         .help("Print text content only")
+        .help_heading("Output")
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("prefix")
         .short('h')
         .long("prefix")
         .help("Print file name prefix")
+        .help_heading("Output")
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("no-prefix")
         .short('H')
         .long("no-prefix")
         .help("Suppress file name prefix")
+        .help_heading("Output")
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("list")
         .short('l')
         .long("list")
         .help("Only print matching file names")
+        .help_heading("Output")
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("count")
         .short('C')
         .long("count")
         .help("Print the number of matches")
+        .help_heading("Output")
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("quiet")
         .short('q')
         .long("quiet")
         .help("Suppress output")
+        .help_heading("Output")
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("print0")
         .short('0')
         .long("print0")
         .help("Null-terminate lines")
+        .help_heading("Output")
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("output")
         .short('o')
         .long("output")
-        .help("Output file"))
-
-    .arg(Arg::new("search")
-        .short('s')
-        .long("search")
-        .help("Search String (matches against all elements)"))
+        .help("Output file")
+        .help_heading("Output")
+        .group("global"))
 
     .arg(Arg::new("files")
         .action(ArgAction::Append))
+
+    .after_help("Selectors can be chained using '!'.
+
+The first selector is applied to the document root, and subsequent selectors
+are applied to the results of the previous selector. The --parent flag can be
+used to select the input element rather than the matched children.")
 
     .get_matches_from(args)
 }
