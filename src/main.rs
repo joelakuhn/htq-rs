@@ -3,6 +3,7 @@ use std::{env, fs::OpenOptions, io::IsTerminal, process::exit, vec};
 use clap::{Arg, ArgAction, ArgMatches};
 use scraper::{Html, Selector, ElementRef};
 use std::io::Write;
+use regex::Regex;
 
 struct Opts<'a> {
     attributes: Vec<&'a String>,
@@ -20,10 +21,11 @@ enum SelectorDirection {
     Current,
 }
 
-struct SelectorSet<'a> {
+struct SelectorSet {
     direction: SelectorDirection,
     selectors: Vec<Selector>,
-    search: &'a Vec<&'a String>,
+    search: Vec<String>,
+    regex: Vec<Regex>,
 }
 
 #[allow(unused_must_use)]
@@ -118,13 +120,12 @@ impl MatchRecorder<'_> {
 }
 
 fn fragment_matches_search(fragment: &ElementRef, set: &SelectorSet) -> bool {
-    if set.search.is_empty() {
-        return true;
-    }
-    else {
+    let is_match = (set.search.is_empty() && !set.regex.is_empty()) || {
         let fragment_text = String::from_iter(fragment.text());
-        return set.search.iter().all(|search_str| fragment_text.contains(*search_str));
-    }
+        (!set.regex.is_empty() && set.regex.iter().any(|re| re.is_match(&fragment_text)))
+        || (!set.search.is_empty() && set.search.iter().any(|search_str| fragment_text.contains(search_str)))
+    };
+    return is_match;
 }
 
 fn proces_fragment(document: &ElementRef, sets: &Vec<SelectorSet>, set_i: usize, opts: &Opts, recorder: &mut MatchRecorder) {
@@ -138,7 +139,7 @@ fn proces_fragment(document: &ElementRef, sets: &Vec<SelectorSet>, set_i: usize,
     let selectors = &set.selectors;
 
     if selectors.is_empty() {
-        if !set.search.is_empty() && fragment_matches_search(document, set) {
+        if fragment_matches_search(document, set) {
             proces_fragment(document, sets, set_i + 1, opts, recorder);
         }
     }
@@ -191,6 +192,14 @@ fn parse_args(args: &Vec<String>) -> ArgMatches {
         .long("search")
         .action(ArgAction::Append)
         .help("Search String (matches against all elements)")
+        .help_heading("Selectors")
+        .group("stream-relative"))
+
+    .arg(Arg::new("regex")
+        .short('r')
+        .long("regex")
+        .action(ArgAction::Append)
+        .help("Search regex")
         .help_heading("Selectors")
         .group("stream-relative"))
 
@@ -306,7 +315,6 @@ fn main() {
     let trim = *matches.get_one::<bool>("trim").unwrap_or(&false);
     let count = *matches.get_one::<bool>("count").unwrap_or(&false);
     let attributes : Vec<&String> = matches.get_many::<String>("attribute").unwrap_or_default().collect();
-    let search : Vec<&String> = matches.get_many::<String>("search").unwrap_or_default().collect();
 
     if positional_args.len() == 0 {
         positional_args.push(&stdin_path);
@@ -354,10 +362,17 @@ fn main() {
             Selector::parse(s).expect("Could not parse selector {}")
         }).collect();
 
+
+        let search : Vec<String> = matches.get_many::<String>("search").unwrap_or_default().map(|s| s.clone()).collect();
+        let regex : Vec<Regex> = matches.get_many::<String>("regex").unwrap_or_default().map(|s| {
+            Regex::new(s).expect("Could not parse regex {}")
+        }).collect();
+
         selector_sets.push(SelectorSet {
             direction: direction,
             selectors: selectors,
-            search: &search,
+            search: search,
+            regex: regex,
         });
     }
 

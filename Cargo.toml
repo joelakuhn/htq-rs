@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 scraper = "0.18.1"
 clap = { version = "4.4.3", features = [ "cargo" ] }
+regex = "1.10.3"
