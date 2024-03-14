@@ -10,9 +10,9 @@ struct Opts<'a> {
     quiet: bool,
     text: bool,
     prefix: bool,
+    trim: bool,
     count: bool,
     nl: &'a str,
-    search: Option<&'a String>,
 }
 
 enum SelectorDirection {
@@ -20,9 +20,10 @@ enum SelectorDirection {
     Current,
 }
 
-struct SelectorSet {
+struct SelectorSet<'a> {
     direction: SelectorDirection,
     selectors: Vec<Selector>,
+    search: &'a Vec<&'a String>,
 }
 
 #[allow(unused_must_use)]
@@ -42,19 +43,21 @@ struct MatchRecorder<'a> {
     count: usize,
     opts: &'a Opts<'a>,
     path: &'a String,
+    out: &'a mut dyn Write,
 }
 
 impl MatchRecorder<'_> {
-    fn new<'a>(opts: &'a Opts<'a>, path: &'a String) -> MatchRecorder<'a> {
+    fn new<'a>(opts: &'a Opts<'a>, path: &'a String, out: &'a mut dyn Write) -> MatchRecorder<'a> {
         return MatchRecorder {
             count: 0,
             opts: opts,
             path: path,
+            out: out,
         }
     }
 
     #[allow(unused_must_use)]
-    fn record<'a>(&mut self, el: &ElementRef, out: &'a mut dyn Write) {
+    fn record<'a>(&mut self, el: &ElementRef) {
         if self.opts.count {
             self.count += 1;
             return;
@@ -65,80 +68,92 @@ impl MatchRecorder<'_> {
         }
 
         if self.opts.list {
-            if self.opts.prefix { highlight_prefix(out, self.path); }
-            write!(out, "{}{}", *self.path, self.opts.nl);
+            if self.opts.prefix { highlight_prefix(self.out, self.path); }
+            write!(self.out, "{}{}", *self.path, self.opts.nl);
         }
 
         if self.opts.attributes.len() > 0 {
             for attr in &self.opts.attributes {
-                if self.opts.prefix { highlight_prefix(out, self.path); }
-                write!(out, "{}{}", el.value().attr(attr).unwrap_or(""), self.opts.nl);
+                if self.opts.prefix { highlight_prefix(self.out, self.path); }
+                if self.opts.trim {
+                    write!(self.out, "{}{}", el.value().attr(attr).unwrap_or("").trim(), self.opts.nl);
+                }
+                else {
+                    write!(self.out, "{}{}", el.value().attr(attr).unwrap_or(""), self.opts.nl);
+                }
             }
         }
 
         else if self.opts.text {
-            if self.opts.prefix { highlight_prefix(out, self.path); }
+            if self.opts.prefix { highlight_prefix(self.out, self.path); }
             for piece in el.text() {
-                write!(out, "{}", piece);
+                if self.opts.trim {
+                    write!(self.out, "{}", piece.trim());
+                }
+                else {
+                    write!(self.out, "{}", piece);
+                }
             }
-            write!(out, "{}", self.opts.nl);
+            write!(self.out, "{}", self.opts.nl);
         }
 
         else {
-            if self.opts.prefix { highlight_prefix(out, self.path); }
-            write!(out, "{}{}", el.html(), self.opts.nl);
+            if self.opts.prefix { highlight_prefix(self.out, self.path); }
+            if self.opts.trim {
+                write!(self.out, "{}{}", el.html().trim(), self.opts.nl);
+            }
+            else {
+                write!(self.out, "{}{}", el.html(), self.opts.nl);
+            }
         }
     }
 
     #[allow(unused_must_use)]
-    fn conclude<'a>(self, out: &'a mut dyn Write) {
-        if self.opts.count {
-            write!(out, "{}{}", self.count, self.opts.nl);
+    fn conclude<'a>(self) {
+        if self.opts.count && self.count > 0 {
+            if self.opts.prefix { highlight_prefix(self.out, self.path); }
+            write!(self.out, "{}{}", self.count, self.opts.nl);
         }
     }
 }
 
-fn proces_fragment(document: &ElementRef, sets: &Vec<SelectorSet>, set_i: usize, opts: &Opts, out: &mut dyn Write, path: &String) {
-    let direction = &sets.get(set_i).unwrap().direction;
-    let mut recorder = MatchRecorder::new(opts, path);
-    let selectors = &sets.get(set_i).unwrap().selectors;
+fn fragment_matches_search(fragment: &ElementRef, set: &SelectorSet) -> bool {
+    if set.search.is_empty() {
+        return true;
+    }
+    else {
+        let fragment_text = String::from_iter(fragment.text());
+        return set.search.iter().all(|search_str| fragment_text.contains(*search_str));
+    }
+}
+
+fn proces_fragment(document: &ElementRef, sets: &Vec<SelectorSet>, set_i: usize, opts: &Opts, recorder: &mut MatchRecorder) {
+    if set_i >= sets.len() {
+        recorder.record(&document);
+        return;
+    }
+
+    let set = sets.get(set_i).unwrap();
+    let direction = &set.direction;
+    let selectors = &set.selectors;
 
     if selectors.is_empty() {
-        match direction {
-            SelectorDirection::Current => recorder.record(document, out),
-            SelectorDirection::Document => recorder.record(document, out),
+        if !set.search.is_empty() && fragment_matches_search(document, set) {
+            proces_fragment(document, sets, set_i + 1, opts, recorder);
         }
     }
 
     for selector in selectors {
-        let matches = document.select(selector);
-        let matches = matches.filter(|el| {
-            opts.search.is_none() || String::from_iter(el.text()).contains(opts.search.unwrap())
-        });
-        if set_i + 1 < sets.len() {
-            for el in matches {
-                let next_set_i = set_i + 1;
-                if matches!(direction, SelectorDirection::Current) {
-                    proces_fragment(&el, sets, next_set_i, opts, out, path);
-                }
-                else {
-                    proces_fragment(document, sets, next_set_i, opts, out, path);
-                    break;
-                }
+        for el in document.select(selector) {
+            let next_set_i = set_i + 1;
+            if matches!(direction, SelectorDirection::Current) {
+                proces_fragment(&el, sets, next_set_i, opts, recorder);
             }
-        }
-        else {
-            for el in matches {
-                if matches!(direction, SelectorDirection::Current) {
-                    recorder.record(&el, out);
-                }
-                else {
-                    recorder.record(document, out);
-                }
+            else {
+                proces_fragment(document, sets, next_set_i, opts, recorder);
             }
         }
     }
-    recorder.conclude(out);
 }
 
 fn process_path(path: &String, set: &Vec<SelectorSet>, set_i: usize, opts: &Opts, write: &mut dyn Write) {
@@ -152,7 +167,9 @@ fn process_path(path: &String, set: &Vec<SelectorSet>, set_i: usize, opts: &Opts
     match file_result {
         Ok(contents) => {
             let document = Html::parse_document(&contents);
-            proces_fragment(&document.root_element(), set, set_i, opts, write, path);
+            let mut recorder = MatchRecorder::new(opts, path, write);
+            proces_fragment(&document.root_element(), set, set_i, opts, &mut recorder);
+            recorder.conclude();
         },
         _ => {}
     }
@@ -172,6 +189,7 @@ fn parse_args(args: &Vec<String>) -> ArgMatches {
     .arg(Arg::new("search")
         .short('s')
         .long("search")
+        .action(ArgAction::Append)
         .help("Search String (matches against all elements)")
         .help_heading("Selectors")
         .group("stream-relative"))
@@ -198,7 +216,7 @@ fn parse_args(args: &Vec<String>) -> ArgMatches {
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("prefix")
-        .short('h')
+        .short('P')
         .long("prefix")
         .help("Print file name prefix")
         .help_heading("Output")
@@ -215,6 +233,13 @@ fn parse_args(args: &Vec<String>) -> ArgMatches {
         .short('l')
         .long("list")
         .help("Only print matching file names")
+        .help_heading("Output")
+        .action(ArgAction::SetTrue))
+
+    .arg(Arg::new("trim")
+        .short('T')
+        .long("trim")
+        .help("Trim leading and trailing whitespace")
         .help_heading("Output")
         .action(ArgAction::SetTrue))
 
@@ -278,9 +303,10 @@ fn main() {
     let list = *matches.get_one::<bool>("list").unwrap_or(&false);
     let quiet = *matches.get_one::<bool>("quiet").unwrap_or(&false);
     let text = *matches.get_one::<bool>("text").unwrap_or(&false);
+    let trim = *matches.get_one::<bool>("trim").unwrap_or(&false);
     let count = *matches.get_one::<bool>("count").unwrap_or(&false);
     let attributes : Vec<&String> = matches.get_many::<String>("attribute").unwrap_or_default().collect();
-    let search = matches.get_one::<String>("search");
+    let search : Vec<&String> = matches.get_many::<String>("search").unwrap_or_default().collect();
 
     if positional_args.len() == 0 {
         positional_args.push(&stdin_path);
@@ -305,9 +331,9 @@ fn main() {
         quiet: quiet,
         text: text,
         prefix: prefix,
+        trim: trim,
         count: count,
         nl: nl,
-        search: search,
     };
 
     let mut selector_sets: Vec<SelectorSet> = vec![];
@@ -331,6 +357,7 @@ fn main() {
         selector_sets.push(SelectorSet {
             direction: direction,
             selectors: selectors,
+            search: &search,
         });
     }
 
