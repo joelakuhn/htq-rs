@@ -216,7 +216,7 @@ fn parse_args(args: &Vec<String>) -> ArgMatches {
         .action(ArgAction::SetTrue))
 
     .arg(Arg::new("prefix")
-        .short('P')
+        .short('h')
         .long("prefix")
         .help("Print file name prefix")
         .help_heading("Output")
