@@ -359,13 +359,25 @@ fn main() {
             else { SelectorDirection::Current };
 
         let selectors : Vec<Selector> = matches.get_many::<String>("selector").unwrap_or_default().map(|s| {
-            Selector::parse(s).expect("Could not parse selector {}")
+            match Selector::parse(s) {
+                Ok(sel) => sel,
+                Err(_) => {
+                    eprintln!("Invalid selector: {}", s);
+                    exit(1);
+                }
+            }
         }).collect();
 
 
         let search : Vec<String> = matches.get_many::<String>("search").unwrap_or_default().map(|s| s.clone()).collect();
         let regex : Vec<Regex> = matches.get_many::<String>("regex").unwrap_or_default().map(|s| {
-            Regex::new(s).expect("Could not parse regex {}")
+            match Regex::new(s) {
+                Ok(re) => re,
+                Err(_) => {
+                    eprintln!("Invalid regex: {}", s);
+                    exit(1);
+                }
+            }
         }).collect();
 
         selector_sets.push(SelectorSet {
